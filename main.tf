@@ -208,6 +208,7 @@ resource "helm_release" "minio" {
   namespace                  = kubernetes_namespace_v1.mlops_dev.metadata[0].name
   wait                       = false
   disable_openapi_validation = true
+  disable_webhooks           = true
 
   # FIX 2: Merged all variables into a SINGLE `set` list
   set = [

@@ -42,4 +42,4 @@ jobs:
       # 2. ON MERGE TO MAIN: Actually apply the changes
       - name: Terraform Apply (Main)
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        run: terraform apply -auto-approve
+        run: terraform apply -parallelism=1 -auto-approve 
