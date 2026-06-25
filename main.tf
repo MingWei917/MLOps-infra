@@ -179,39 +179,39 @@ resource "helm_release" "minio" {
   namespace  = kubernetes_namespace_v1.mlops_dev.metadata[0].name
   timeout    = 600
 
-  set {
-    name  = "rootUser"
-    value = var.minio_root_user
-  }
-  set {
-    name  = "rootPassword"
-    value = var.minio_root_password
-  }
-
-  set {
-    name  = "persistence.enabled"
-    value = "true"
-  }
-  set {
-    name  = "persistence.size"
-    value = "5Gi"
-  }
-
-  set {
-    name  = "service.type"
-    value = "NodePort"
-  }
-  set {
-    name  = "service.nodePort"
-    value = "30900"
-  }
-
-  set {
-    name  = "consoleService.type"
-    value = "NodePort"
-  }
-  set {
-    name  = "consoleService.nodePort"
-    value = "30901"
-  }
+  # 👇 HELM V3 SYNTAX: 'set' is now a list of objects
+  set = [
+    {
+      name  = "rootUser"
+      value = var.minio_root_user
+    },
+    {
+      name  = "rootPassword"
+      value = var.minio_root_password
+    },
+    {
+      name  = "persistence.enabled"
+      value = "true"
+    },
+    {
+      name  = "persistence.size"
+      value = "5Gi"
+    },
+    {
+      name  = "service.type"
+      value = "NodePort"
+    },
+    {
+      name  = "service.nodePort"
+      value = "30900"
+    },
+    {
+      name  = "consoleService.type"
+      value = "NodePort"
+    },
+    {
+      name  = "consoleService.nodePort"
+      value = "30901"
+    }
+  ]
 }
