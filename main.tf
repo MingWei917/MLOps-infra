@@ -1,4 +1,26 @@
-# 1. Terraform & Providers Definition
+# ==========================================
+# 1. Variables & Providers
+# ==========================================
+variable "kubeconfig_path" {
+  description = "Path to the kubeconfig file"
+  type        = string
+  default     = "~/.kube/config" # Use standard path, override via TF_VAR_kubeconfig_path if needed
+}
+
+variable "minio_root_user" {
+  description = "MinIO root username"
+  type        = string
+  default     = "minioadmin"
+  sensitive   = true
+}
+
+variable "minio_root_password" {
+  description = "MinIO root password"
+  type        = string
+  default     = "minioadmin"
+  sensitive   = true
+}
+
 terraform {
   required_providers {
     kubernetes = {
@@ -13,43 +35,41 @@ terraform {
 }
 
 provider "kubernetes" {
-  config_path    = "/mnt/c/Users/common/.kube/config"
+  config_path    = var.kubeconfig_path
   config_context = "docker-desktop"
 }
 
-
 provider "helm" {
-  kubernetes = {
-    config_path    = "/mnt/c/Users/common/.kube/config"
+  kubernetes {
+    config_path    = var.kubeconfig_path
     config_context = "docker-desktop"
   }
 }
 
-# 2. Create NameSpace
+# ==========================================
+# 2. Namespace
+# ==========================================
 resource "kubernetes_namespace_v1" "mlops_dev" {
   metadata {
     name = "mlops-dev"
   }
 }
 
+# ==========================================
 # 3. Argo Workflows 
+# ==========================================
 resource "helm_release" "argo_workflows" {
   name       = "argo-workflows"
-  #repository = "https://argoproj.github.io/argo-helm"
-  #chart      = "argo-workflows"
-  chart      = "./argo-workflows.tgz" # Points to your downloaded file
+  repository = "https://argoproj.github.io/argo-helm" # Use remote repo instead of local .tgz
+  chart      = "argo-workflows"
   namespace  = kubernetes_namespace_v1.mlops_dev.metadata[0].name
-  timeout = 600
-  wait = false
-  wait_for_jobs = false
-  
+  timeout    = 600
+  wait       = false
 }
 
 # ==========================================
 # 4. MLflow Tracking Server Setup
 # ==========================================
-
-# Persistent Volume Claim to store SQLite database and Model Artifacts
 resource "kubernetes_persistent_volume_claim_v1" "mlflow_data" {
   metadata {
     name      = "mlflow-data-pvc"
@@ -65,48 +85,40 @@ resource "kubernetes_persistent_volume_claim_v1" "mlflow_data" {
   }
 }
 
-# MLflow Deployment
 resource "kubernetes_deployment_v1" "mlflow" {
   metadata {
     name      = "mlflow-tracking"
     namespace = kubernetes_namespace_v1.mlops_dev.metadata[0].name
-    labels = {
-      app = "mlflow"
-    }
+    labels    = { app = "mlflow" }
   }
 
   spec {
     replicas = 1
-
     selector {
-      match_labels = {
-        app = "mlflow"
-      }
+      match_labels = { app = "mlflow" }
     }
-
     template {
       metadata {
-        labels = {
-          app = "mlflow"
-        }
+        labels = { app = "mlflow" }
       }
-
       spec {
         container {
-          # Official MLflow image
-          image = "ghcr.io/mlflow/mlflow:v3.14.0-full" 
+          image = "ghcr.io/mlflow/mlflow:v2.14.0" # FIXED: Changed v3 to v2
           name  = "mlflow"
 
-          # Start the tracking server
           command = ["mlflow", "server"]
           args = [
             "--host", "0.0.0.0",
             "--port", "5000",
-            "--backend-store-uri", "sqlite:///mlflow/mlflow.db",
+            "--backend-store-uri", "sqlite:////mlflow/mlflow.db",
             "--default-artifact-root", "/mlflow/artifacts",
             "--serve-artifacts",
-	    "--allowed-hosts", "*"
           ]
+
+          env {
+            name  = "MLFLOW_ALLOWED_HOSTS"
+            value = "*"
+          }
 
           port {
             container_port = 5000
@@ -130,7 +142,6 @@ resource "kubernetes_deployment_v1" "mlflow" {
   }
 }
 
-# Expose MLflow Server to Localhost
 resource "kubernetes_service_v1" "mlflow" {
   metadata {
     name      = "mlflow-service"
@@ -143,14 +154,14 @@ resource "kubernetes_service_v1" "mlflow" {
     port {
       port        = 5000
       target_port = 5000
-      node_port   = 30500 # Accessible via http://localhost:30500
+      node_port   = 30500
     }
     type = "NodePort"
   }
 }
 
 # ==========================================
-# 5. MinIO Object Storage (Remote Storage for DVC)
+# 5. MinIO Object Storage
 # ==========================================
 resource "helm_release" "minio" {
   name       = "minio"
@@ -159,47 +170,39 @@ resource "helm_release" "minio" {
   namespace  = kubernetes_namespace_v1.mlops_dev.metadata[0].name
   timeout    = 600
 
-  set = [
-    # FORCE STANDALONE MODE (Fixes the 16-pod issue)
-    { 
-      name = "mode",     
-      value = "standalone" 
-    },
-    { 
-      name = "replicas",
-      value = "1" 
-    },
-    {
-      name  = "rootUser"
-      value = "minioadmin"
-    },
-    {
-      name  = "rootPassword"
-      value = "minioadmin"
-    },
-    {
-      name  = "persistence.enabled"
-      value = "true"
-    },
-    {
-      name  = "persistence.size"
-      value = "5Gi"
-    },
-    {
-      name  = "service.type"
-      value = "NodePort"
-    },
-    {
-      name  = "service.nodePort"
-      value = "30900"
-    },
-    {
-      name  = "consoleService.type"
-      value = "NodePort"
-    },
-    {
-      name  = "consoleService.nodePort"
-      value = "30901"
-    }
-  ]
+  set {
+    name  = "rootUser"
+    value = var.minio_root_user
+  }
+  set {
+    name  = "rootPassword"
+    value = var.minio_root_password
+  }
+
+  set {
+    name  = "persistence.enabled"
+    value = "true"
+  }
+  set {
+    name  = "persistence.size"
+    value = "5Gi"
+  }
+
+  set {
+    name  = "service.type"
+    value = "NodePort"
+  }
+  set {
+    name  = "service.nodePort"
+    value = "30900"
+  }
+
+  set {
+    name  = "consoleService.type"
+    value = "NodePort"
+  }
+  set {
+    name  = "consoleService.nodePort"
+    value = "30901"
+  }
 }

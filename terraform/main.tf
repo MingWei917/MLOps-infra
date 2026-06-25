@@ -110,11 +110,11 @@ resource "kubernetes_deployment_v1" "mlflow" {
           args = [
             "--host", "0.0.0.0",
             "--port", "5000",
-            "--backend-store-uri", "sqlite:////mlflow/mlflow.db", 
+            "--backend-store-uri", "sqlite:////mlflow/mlflow.db",
             "--default-artifact-root", "/mlflow/artifacts",
             "--serve-artifacts",
           ]
-          
+
           env {
             name  = "MLFLOW_ALLOWED_HOSTS"
             value = "*"
@@ -154,7 +154,7 @@ resource "kubernetes_service_v1" "mlflow" {
     port {
       port        = 5000
       target_port = 5000
-      node_port   = 30500 
+      node_port   = 30500
     }
     type = "NodePort"
   }
@@ -194,7 +194,7 @@ resource "helm_release" "minio" {
   }
   set {
     name  = "service.nodePort"
-    value = "30900" 
+    value = "30900"
   }
 
   set {
@@ -203,6 +203,6 @@ resource "helm_release" "minio" {
   }
   set {
     name  = "consoleService.nodePort"
-    value = "30901" 
+    value = "30901"
   }
 }
