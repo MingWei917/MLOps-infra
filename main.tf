@@ -92,6 +92,10 @@ resource "kubernetes_persistent_volume_claim_v1" "mlflow_data" {
       }
     }
   }
+  # Explicit timeout for the PVC creation
+  timeouts {
+    create = "10m"
+  }
 }
 
 resource "kubernetes_deployment_v1" "mlflow" {
@@ -100,6 +104,8 @@ resource "kubernetes_deployment_v1" "mlflow" {
     namespace = kubernetes_namespace_v1.mlops_dev.metadata[0].name
     labels    = { app = "mlflow" }
   }
+  # Don't block Terraform if the pod takes a while to start
+  wait_for_rollout = false
 
   spec {
     replicas = 1
@@ -174,12 +180,13 @@ resource "kubernetes_service_v1" "mlflow" {
 # ==========================================
 resource "helm_release" "minio" {
   name       = "minio"
-  repository = "https://charts.min.io/"
+  repository = "https://charts.bitnami.com/bitnami"
   chart      = "minio"
   namespace  = kubernetes_namespace_v1.mlops_dev.metadata[0].name
   timeout    = 600
+  # Do not wait for MinIO pods to be "Ready"
+  wait = false
 
-  # 👇 HELM V3 SYNTAX: 'set' is now a list of objects
   set = [
     {
       name  = "rootUser"
