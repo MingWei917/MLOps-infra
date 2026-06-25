@@ -4,13 +4,13 @@
 variable "kubeconfig_path" {
   description = "Path to the kubeconfig file"
   type        = string
-  default     = "~/.kube/config" 
+  default     = "~/.kube/config"
 }
 
 variable "kube_context" {
   description = "K8s context to use. Null means use the 'current-context'."
   type        = string
-  default     = null 
+  default     = null
 }
 
 variable "minio_root_user" {
@@ -69,7 +69,7 @@ resource "kubernetes_namespace_v1" "mlops_dev" {
 # ==========================================
 resource "helm_release" "argo_workflows" {
   name       = "argo-workflows"
-  repository = "https://argoproj.github.io/argo-helm" 
+  repository = "https://argoproj.github.io/argo-helm"
   chart      = "argo-workflows"
   namespace  = kubernetes_namespace_v1.mlops_dev.metadata[0].name
   timeout    = 600
@@ -112,7 +112,7 @@ resource "kubernetes_deployment_v1" "mlflow" {
       }
       spec {
         container {
-          image = "ghcr.io/mlflow/mlflow:v2.14.0" 
+          image = "ghcr.io/mlflow/mlflow:v2.14.0"
           name  = "mlflow"
 
           command = ["mlflow", "server"]
