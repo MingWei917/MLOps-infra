@@ -2,29 +2,25 @@
 # 1. Variables & Providers
 # ==========================================
 variable "kubeconfig_path" {
-  description = "Path to the kubeconfig file"
-  type        = string
-  default     = "~/.kube/config"
+  type    = string
+  default = "~/.kube/config"
 }
 
 variable "kube_context" {
-  description = "K8s context to use. Null means use the 'current-context'."
-  type        = string
-  default     = null
+  type    = string
+  default = null
 }
 
 variable "minio_root_user" {
-  description = "MinIO root username"
-  type        = string
-  default     = "minioadmin"
-  sensitive   = true
+  type      = string
+  default   = "minioadmin"
+  sensitive = true
 }
 
 variable "minio_root_password" {
-  description = "MinIO root password"
-  type        = string
-  default     = "minioadmin"
-  sensitive   = true
+  type      = string
+  default   = "minioadmin"
+  sensitive = true
 }
 
 terraform {
@@ -37,18 +33,19 @@ terraform {
       source  = "hashicorp/helm"
       version = ">= 2.17.0"
     }
+    time = {
+      source  = "hashicorp/time"
+      version = "0.11.1"
+    }
   }
 }
 
-# Locally: Uses your current context (docker-desktop)
-# CI/CD: Uses the KinD cluster context created by the GitHub Action
 provider "kubernetes" {
   config_path    = var.kubeconfig_path
   config_context = var.kube_context
 }
 
 provider "helm" {
-  # 👇 Note the '=' sign. This is required for Helm provider v3.x
   kubernetes = {
     config_path    = var.kubeconfig_path
     config_context = var.kube_context
@@ -56,7 +53,7 @@ provider "helm" {
 }
 
 # ==========================================
-# 2. Namespace
+# 2. Namespace & API Server "Breathing Room"
 # ==========================================
 resource "kubernetes_namespace_v1" "mlops_dev" {
   metadata {
@@ -64,16 +61,22 @@ resource "kubernetes_namespace_v1" "mlops_dev" {
   }
 }
 
+resource "time_sleep" "wait_for_cluster" {
+  depends_on      = [kubernetes_namespace_v1.mlops_dev]
+  create_duration = "15s"
+}
+
 # ==========================================
 # 3. Argo Workflows 
 # ==========================================
 resource "helm_release" "argo_workflows" {
-  name       = "argo-workflows"
-  repository = "https://argoproj.github.io/argo-helm"
-  chart      = "argo-workflows"
-  namespace  = kubernetes_namespace_v1.mlops_dev.metadata[0].name
-  timeout    = 600
-  wait       = false
+  name                       = "argo-workflows"
+  repository                 = "https://argoproj.github.io/argo-helm"
+  chart                      = "argo-workflows"
+  namespace                  = kubernetes_namespace_v1.mlops_dev.metadata[0].name
+  wait                       = false
+  disable_openapi_validation = true
+  depends_on                 = [time_sleep.wait_for_cluster]
 }
 
 # ==========================================
@@ -92,29 +95,35 @@ resource "kubernetes_persistent_volume_claim_v1" "mlflow_data" {
       }
     }
   }
-  # Explicit timeout for the PVC creation
   timeouts {
     create = "10m"
   }
+  depends_on = [time_sleep.wait_for_cluster]
 }
 
 resource "kubernetes_deployment_v1" "mlflow" {
   metadata {
     name      = "mlflow-tracking"
     namespace = kubernetes_namespace_v1.mlops_dev.metadata[0].name
-    labels    = { app = "mlflow" }
+    labels = {
+      app = "mlflow"
+    }
   }
-  # Don't block Terraform if the pod takes a while to start
+
   wait_for_rollout = false
 
   spec {
     replicas = 1
     selector {
-      match_labels = { app = "mlflow" }
+      match_labels = {
+        app = "mlflow"
+      }
     }
     template {
       metadata {
-        labels = { app = "mlflow" }
+        labels = {
+          app = "mlflow"
+        }
       }
       spec {
         container {
@@ -135,11 +144,13 @@ resource "kubernetes_deployment_v1" "mlflow" {
             value = "*"
           }
 
+          # FIX 1: Expanded to multi-line block syntax
           port {
             container_port = 5000
             name           = "http"
           }
 
+          # FIX 1: Expanded to multi-line block syntax
           volume_mount {
             name       = "mlflow-storage"
             mount_path = "/mlflow"
@@ -178,23 +189,31 @@ resource "kubernetes_service_v1" "mlflow" {
 # ==========================================
 # 5. MinIO Object Storage
 # ==========================================
-resource "helm_release" "minio" {
-  name       = "minio"
-  repository = "https://charts.bitnami.com/bitnami"
-  chart      = "minio"
-  namespace  = kubernetes_namespace_v1.mlops_dev.metadata[0].name
-  timeout    = 600
-  # Do not wait for MinIO pods to be "Ready"
-  wait = false
+resource "kubernetes_secret_v1" "minio_creds" {
+  metadata {
+    name      = "minio-root-creds"
+    namespace = kubernetes_namespace_v1.mlops_dev.metadata[0].name
+  }
+  data = {
+    rootUser     = var.minio_root_user
+    rootPassword = var.minio_root_password
+  }
+  depends_on = [time_sleep.wait_for_cluster]
+}
 
+resource "helm_release" "minio" {
+  name                       = "minio"
+  repository                 = "https://charts.min.io/"
+  chart                      = "minio"
+  namespace                  = kubernetes_namespace_v1.mlops_dev.metadata[0].name
+  wait                       = false
+  disable_openapi_validation = true
+
+  # FIX 2: Merged all variables into a SINGLE `set` list
   set = [
     {
-      name  = "rootUser"
-      value = var.minio_root_user
-    },
-    {
-      name  = "rootPassword"
-      value = var.minio_root_password
+      name  = "existingSecret"
+      value = kubernetes_secret_v1.minio_creds.metadata[0].name
     },
     {
       name  = "persistence.enabled"
@@ -221,4 +240,6 @@ resource "helm_release" "minio" {
       value = "30901"
     }
   ]
+
+  depends_on = [kubernetes_secret_v1.minio_creds]
 }
