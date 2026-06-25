@@ -4,7 +4,13 @@
 variable "kubeconfig_path" {
   description = "Path to the kubeconfig file"
   type        = string
-  default     = "~/.kube/config" # Use standard path, override via TF_VAR_kubeconfig_path if needed
+  default     = "~/.kube/config" 
+}
+
+variable "kube_context" {
+  description = "K8s context to use. Null means use the 'current-context'."
+  type        = string
+  default     = null 
 }
 
 variable "minio_root_user" {
@@ -34,15 +40,18 @@ terraform {
   }
 }
 
+# Locally: Uses your current context (docker-desktop)
+# CI/CD: Uses the KinD cluster context created by the GitHub Action
 provider "kubernetes" {
   config_path    = var.kubeconfig_path
-  config_context = "docker-desktop"
+  config_context = var.kube_context
 }
 
 provider "helm" {
-  kubernetes {
+  # 👇 Note the '=' sign. This is required for Helm provider v3.x
+  kubernetes = {
     config_path    = var.kubeconfig_path
-    config_context = "docker-desktop"
+    config_context = var.kube_context
   }
 }
 
@@ -60,7 +69,7 @@ resource "kubernetes_namespace_v1" "mlops_dev" {
 # ==========================================
 resource "helm_release" "argo_workflows" {
   name       = "argo-workflows"
-  repository = "https://argoproj.github.io/argo-helm" # Use remote repo instead of local .tgz
+  repository = "https://argoproj.github.io/argo-helm" 
   chart      = "argo-workflows"
   namespace  = kubernetes_namespace_v1.mlops_dev.metadata[0].name
   timeout    = 600
@@ -103,7 +112,7 @@ resource "kubernetes_deployment_v1" "mlflow" {
       }
       spec {
         container {
-          image = "ghcr.io/mlflow/mlflow:v2.14.0" # FIXED: Changed v3 to v2
+          image = "ghcr.io/mlflow/mlflow:v2.14.0" 
           name  = "mlflow"
 
           command = ["mlflow", "server"]

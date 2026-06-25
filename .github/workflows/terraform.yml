@@ -13,6 +13,13 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      # 👇 NEW: Spin up a local Linux K8s cluster (KinD) on the GitHub runner
+      - name: Create KinD Cluster
+        uses: helm/kind-action@v1.10.0
+        with:
+          cluster_name: mlops-ci
+          # This automatically sets the runner's current-context to 'kind-mlops-ci'
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
