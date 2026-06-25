@@ -104,12 +104,9 @@ resource "kubernetes_deployment_v1" "mlflow" {
             "--port", "5000",
             "--backend-store-uri", "sqlite:///mlflow/mlflow.db",
             "--default-artifact-root", "/mlflow/artifacts",
-            "--serve-artifacts", # Enables proxying artifact requests
+            "--serve-artifacts",
+	    "--allowed-hosts", "*"
           ]
-	  env {
-            name  = "MLFLOW_ALLOWED_HOSTS"
-            value = "*"
-          }
 
           port {
             container_port = 5000
@@ -162,43 +159,47 @@ resource "helm_release" "minio" {
   namespace  = kubernetes_namespace_v1.mlops_dev.metadata[0].name
   timeout    = 600
 
-  # 1. Credentials (Default admin user)
-  set {
-    name  = "rootUser"
-    value = "minioadmin"
-  }
-  set {
-    name  = "rootPassword"
-    value = "minioadmin"
-  }
-
-  # 2. Persistence (CRITICAL: Keeps your models safe if the pod restarts)
-  set {
-    name  = "persistence.enabled"
-    value = "true"
-  }
-  set {
-    name  = "persistence.size"
-    value = "5Gi"
-  }
-
-  # 3. Network: Expose S3 API (Port 9000) to your local machine
-  set {
-    name  = "service.type"
-    value = "NodePort"
-  }
-  set {
-    name  = "service.nodePort"
-    value = "30900" # Access DVC/S3 API via http://localhost:30900
-  }
-
-  # 4. Network: Expose Web UI Console (Port 9001) to your local machine
-  set {
-    name  = "consoleService.type"
-    value = "NodePort"
-  }
-  set {
-    name  = "consoleService.nodePort"
-    value = "30901" # Access Web UI via http://localhost:30901
-  }
+  set = [
+    # FORCE STANDALONE MODE (Fixes the 16-pod issue)
+    { 
+      name = "mode",     
+      value = "standalone" 
+    },
+    { 
+      name = "replicas",
+      value = "1" 
+    },
+    {
+      name  = "rootUser"
+      value = "minioadmin"
+    },
+    {
+      name  = "rootPassword"
+      value = "minioadmin"
+    },
+    {
+      name  = "persistence.enabled"
+      value = "true"
+    },
+    {
+      name  = "persistence.size"
+      value = "5Gi"
+    },
+    {
+      name  = "service.type"
+      value = "NodePort"
+    },
+    {
+      name  = "service.nodePort"
+      value = "30900"
+    },
+    {
+      name  = "consoleService.type"
+      value = "NodePort"
+    },
+    {
+      name  = "consoleService.nodePort"
+      value = "30901"
+    }
+  ]
 }

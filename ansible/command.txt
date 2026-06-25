@@ -1,1 +1,6 @@
-ansible-playbook -K -i localhost, Terraform-ArgoCD.YAML
+ansible-playbook -K -i localhost, Terrafrom-ArgoCD-China.YAML
+
+
+URL:      https://localhost:31636",
+        " Username: admin",
+        " Password: wCXF4zD6Fixpeehp",

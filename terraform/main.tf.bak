@@ -106,10 +106,6 @@ resource "kubernetes_deployment_v1" "mlflow" {
             "--default-artifact-root", "/mlflow/artifacts",
             "--serve-artifacts", # Enables proxying artifact requests
           ]
-	  env {
-            name  = "MLFLOW_ALLOWED_HOSTS"
-            value = "*"
-          }
 
           port {
             container_port = 5000

@@ -1,0 +1,136 @@
+---
+- name: Setup Docker Desktop Kubernetes, Terraform, and ArgoCD
+  hosts: localhost
+  connection: local
+  
+  environment:
+    no_proxy: "127.0.0.1,localhost,kubernetes.docker.internal,.docker.internal"
+    NO_PROXY: "127.0.0.1,localhost,kubernetes.docker.internal,.docker.internal"
+
+  vars:
+    terraform_version: "1.9.5"
+    argocd_version: "stable"
+
+  tasks:
+    # ==========================================
+    # Part 1: Docker Desktop Kubernetes Verification
+    # ==========================================
+    - name: Ensure kubectl is installed
+      shell: command -v kubectl
+      register: kubectl_check
+      failed_when: kubectl_check.rc != 0
+      changed_when: false
+
+    - name: Switch kubectl context to docker-desktop
+      shell: kubectl config use-context docker-desktop
+      register: context_switch
+      changed_when: "'Switched to context' in context_switch.stdout"
+      failed_when: false
+
+    - name: Test kubectl connectivity to Docker Desktop
+      shell: kubectl cluster-info
+      register: kubectl_test
+      retries: 5
+      delay: 10
+      until: kubectl_test.rc == 0
+      changed_when: false
+
+    # ==========================================
+    # Part 2: Terraform Installation (root permission needed)
+    # ==========================================
+    #- name: Install prerequisite packages (unzip)
+    #  become: yes 
+    #  apt:
+    #    name: unzip
+    #    state: present
+    #    update_cache: yes
+
+    #- name: Get system architecture
+    #  command: dpkg --print-architecture
+    #  register: deb_arch
+    #  changed_when: false
+
+    #- name: Download Terraform binary directly
+    #  become: yes 
+    #  get_url:
+    #    url: "https://releases.hashicorp.com/terraform/{{ terraform_version }}/terraform_{{ terraform_version }}_linux_{{ deb_arch.stdout }}.zip"
+    #    dest: "/tmp/terraform.zip"
+    #    mode: '0644'
+
+    #- name: Extract and install Terraform to /usr/local/bin
+    #  become: yes #  /usr/local/bin write permission
+    #  unarchive:
+    #    src: "/tmp/terraform.zip"
+    #    dest: "/usr/local/bin/"
+    #    remote_src: yes
+    #    mode: '0755'
+
+    - name: Verify Terraform installation
+      command: terraform --version
+      register: tf_version
+      changed_when: false
+
+    - name: Display Terraform version
+      debug:
+        msg: "Terraform installed: {{ tf_version.stdout_lines[0] }}"
+
+    # ==========================================
+    # Part 3: ArgoCD Installation (common user permission)
+    # ==========================================
+    - name: Create argocd namespace
+      shell: |
+        kubectl create namespace argocd --dry-run=client -o yaml | \
+        kubectl apply -f - --validate=false
+      register: ns_result
+      changed_when: "'configured' in ns_result.stdout or 'created' in ns_result.stdout"
+
+    - name: Clean up corrupted annotation from previous failed apply
+      shell: |
+        kubectl annotate crd applicationsets.argoproj.io kubectl.kubernetes.io/last-applied-configuration- || true
+      changed_when: false
+    
+    - name: Install ArgoCD from local file (using Server-Side Apply)
+      shell: |
+        kubectl apply --server-side --force-conflicts --validate=false -n argocd -f argocd/argocd-install.yaml
+      register: argocd_install
+      changed_when: "'configured' in argocd_install.stdout or 'created' in argocd_install.stdout"
+
+    - name: Wait for ArgoCD components to be ready
+      shell: |
+        kubectl wait --for=condition=Ready pods --all -n argocd --timeout=300s
+      register: argocd_ready
+      changed_when: false
+      retries: 5
+      delay: 15
+      until: argocd_ready.rc == 0
+
+    - name: Expose ArgoCD server via NodePort
+      shell: |
+        kubectl patch svc argocd-server -n argocd -p '{"spec": {"type": "NodePort"}}'
+      changed_when: false
+
+    - name: Get ArgoCD NodePort
+      shell: |
+        kubectl -n argocd get svc argocd-server -o jsonpath='{.spec.ports[0].nodePort}'
+      register: argocd_port
+      changed_when: false
+
+    - name: Get ArgoCD initial admin password
+      shell: |
+        kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+      register: argocd_password
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    - name: Display ArgoCD access information
+      debug:
+        msg:
+          - "========================================================"
+          - " ArgoCD GitOps has been installed successfully!"
+          - "--------------------------------------------------------"
+          - " URL:      https://localhost:{{ argocd_port.stdout }}"
+          - " Username: admin"
+          - " Password: {{ argocd_password.stdout | default('(Check ArgoCD logs or reset manually)') }}"
+          - "========================================================"
+      when: argocd_port.stdout != ""
