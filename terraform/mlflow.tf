@@ -86,6 +86,7 @@ resource "null_resource" "apply_mlflow" {
 
   triggers = {
     manifest_sha1 = sha1(local_file.mlflow_manifests.content)
+    namespace     = var.namespace # Pass the variable into triggers here
   }
 
   provisioner "local-exec" {
@@ -93,7 +94,8 @@ resource "null_resource" "apply_mlflow" {
   }
 
   provisioner "local-exec" {
-    when    = destroy
-    command = "kubectl delete pvc mlflow-data-pvc deployment mlflow-tracking service mlflow-service -n ${var.namespace} --ignore-not-found"
+    when = destroy
+    # Use self.triggers.namespace instead of var.namespace
+    command = "kubectl delete pvc mlflow-data-pvc deployment mlflow-tracking service mlflow-service -n ${self.triggers.namespace} --ignore-not-found"
   }
 }
