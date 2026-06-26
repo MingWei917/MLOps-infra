@@ -9,16 +9,19 @@ on:
 jobs:
   terraform:
     runs-on: ubuntu-latest
+    # 👇 Tells all 'run' steps to execute inside the terraform folder
+    defaults:
+      run:
+        working-directory: ./terraform 
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 👇 NEW: Spin up a local Linux K8s cluster (KinD) on the GitHub runner
       - name: Create KinD Cluster
         uses: helm/kind-action@v1.10.0
         with:
           cluster_name: mlops-ci
-          # This automatically sets the runner's current-context to 'kind-mlops-ci'
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -34,12 +37,10 @@ jobs:
       - name: Terraform Validate
         run: terraform validate
 
-      # 1. ON PULL REQUEST: Just show the plan
       - name: Terraform Plan (PR)
         if: github.event_name == 'pull_request'
         run: terraform plan -no-color
 
-      # 2. ON MERGE TO MAIN: Actually apply the changes
       - name: Terraform Apply (Main)
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         run: terraform apply -parallelism=1 -auto-approve 
