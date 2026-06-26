@@ -1,0 +1,6 @@
+# Copy this file to terraform.tfvars and fill in your values for local testing
+kubeconfig_path     = "~/.kube/config"
+kube_context        = "docker-desktop" # Leave as null for CI/CD
+namespace           = "mlops-dev"
+minio_root_user     = "minioadmin"
+minio_root_password = "change-me-in-production"
