@@ -12,9 +12,9 @@ resource "kubernetes_persistent_volume_claim_v1" "mlflow_data" {
     }
   }
   timeouts {
-    create = "10m"
+    create = "15m"
   }
-  depends_on = [time_sleep.wait_for_cluster]
+  depends_on = [time_sleep.wait_for_argo]
 }
 
 resource "kubernetes_deployment_v1" "mlflow" {
@@ -80,6 +80,7 @@ resource "kubernetes_deployment_v1" "mlflow" {
       }
     }
   }
+  depends_on = [kubernetes_persistent_volume_claim_v1.mlflow_data]
 }
 
 resource "kubernetes_service_v1" "mlflow" {
@@ -98,4 +99,6 @@ resource "kubernetes_service_v1" "mlflow" {
     }
     type = "NodePort"
   }
+  # Chain the service to the deployment
+  depends_on = [kubernetes_deployment_v1.mlflow]
 }

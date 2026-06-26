@@ -7,7 +7,8 @@ resource "kubernetes_secret_v1" "minio_creds" {
     rootUser     = var.minio_root_user
     rootPassword = var.minio_root_password
   }
-  depends_on = [time_sleep.wait_for_cluster]
+  # CRITICAL: Wait until MLflow is completely submitted before starting MinIO
+  depends_on = [kubernetes_service_v1.mlflow]
 }
 
 resource "helm_release" "minio" {

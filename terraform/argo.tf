@@ -8,3 +8,9 @@ resource "helm_release" "argo_workflows" {
   disable_openapi_validation = true
   depends_on                 = [time_sleep.wait_for_cluster]
 }
+
+# Give the API server 30 seconds to digest Argo's massive CRDs
+resource "time_sleep" "wait_for_argo" {
+  depends_on      = [helm_release.argo_workflows]
+  create_duration = "30s"
+}
