@@ -14,6 +14,7 @@ resource "kubernetes_persistent_volume_claim_v1" "mlflow_data" {
   timeouts {
     create = "15m"
   }
+  # Wait for the 60s Argo recovery sleep
   depends_on = [time_sleep.wait_for_argo]
 }
 

@@ -6,11 +6,19 @@ resource "helm_release" "argo_workflows" {
 
   wait                       = false
   disable_openapi_validation = true
-  depends_on                 = [time_sleep.wait_for_cluster]
+  # Disable CRD installation to prevent KinD API server paralysis
+  set = [
+    {
+      name  = "crds.install"
+      value = "false"
+    }
+  ]
+
+  depends_on = [time_sleep.wait_for_cluster]
 }
 
-# Give the API server 30 seconds to digest Argo's massive CRDs
+# Give the API server 60 seconds to digest Argo's massive CRDs
 resource "time_sleep" "wait_for_argo" {
   depends_on      = [helm_release.argo_workflows]
-  create_duration = "30s"
+  create_duration = "60s"
 }
