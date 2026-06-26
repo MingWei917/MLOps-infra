@@ -1,105 +1,99 @@
-resource "kubernetes_persistent_volume_claim_v1" "mlflow_data" {
-  metadata {
-    name      = "mlflow-data-pvc"
-    namespace = kubernetes_namespace_v1.mlops.metadata[0].name
-  }
-  spec {
-    access_modes = ["ReadWriteOnce"]
-    resources {
-      requests = {
-        storage = "2Gi"
-      }
-    }
-  }
-  timeouts {
-    create = "15m"
-  }
-  # Wait for the 60s Argo recovery sleep
-  depends_on = [time_sleep.wait_for_argo]
+# ==========================================
+# MLflow Tracking Server Setup
+# ==========================================
+# NOTE: We use `local_file` and `kubectl` instead of the Terraform Kubernetes 
+# Provider resources. This bypasses the "client rate limiter context deadline 
+# exceeded" bug that occurs on low-resource CI/CD runners.
+
+resource "local_file" "mlflow_manifests" {
+  content  = <<-EOT
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mlflow-data-pvc
+  namespace: ${kubernetes_namespace_v1.mlops.metadata[0].name}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlflow-tracking
+  namespace: ${kubernetes_namespace_v1.mlops.metadata[0].name}
+  labels:
+    app: mlflow
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mlflow
+  template:
+    metadata:
+      labels:
+        app: mlflow
+    spec:
+      containers:
+        - name: mlflow
+          image: ghcr.io/mlflow/mlflow:v2.14.0
+          command: ["mlflow", "server"]
+          args:
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "5000"
+            - "--backend-store-uri"
+            - "sqlite:////mlflow/mlflow.db"
+            - "--default-artifact-root"
+            - "/mlflow/artifacts"
+            - "--serve-artifacts"
+          env:
+            - name: MLFLOW_ALLOWED_HOSTS
+              value: "*"
+          ports:
+            - containerPort: 5000
+              name: http
+          volumeMounts:
+            - name: mlflow-storage
+              mountPath: /mlflow
+      volumes:
+        - name: mlflow-storage
+          persistentVolumeClaim:
+            claimName: mlflow-data-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mlflow-service
+  namespace: ${kubernetes_namespace_v1.mlops.metadata[0].name}
+spec:
+  selector:
+    app: mlflow
+  ports:
+    - port: 5000
+      targetPort: 5000
+      nodePort: 30500
+  type: NodePort
+EOT
+  filename = "${path.module}/mlflow_manifests.yaml"
 }
 
-resource "kubernetes_deployment_v1" "mlflow" {
-  metadata {
-    name      = "mlflow-tracking"
-    namespace = kubernetes_namespace_v1.mlops.metadata[0].name
-    labels = {
-      app = "mlflow"
-    }
+resource "null_resource" "apply_mlflow" {
+  depends_on = [local_file.mlflow_manifests, time_sleep.wait_for_argo]
+
+  triggers = {
+    manifest_sha1 = sha1(local_file.mlflow_manifests.content)
   }
 
-  wait_for_rollout = false
-
-  spec {
-    replicas = 1
-    selector {
-      match_labels = {
-        app = "mlflow"
-      }
-    }
-    template {
-      metadata {
-        labels = {
-          app = "mlflow"
-        }
-      }
-      spec {
-        container {
-          image = "ghcr.io/mlflow/mlflow:v2.14.0"
-          name  = "mlflow"
-
-          command = ["mlflow", "server"]
-          args = [
-            "--host", "0.0.0.0",
-            "--port", "5000",
-            "--backend-store-uri", "sqlite:////mlflow/mlflow.db",
-            "--default-artifact-root", "/mlflow/artifacts",
-            "--serve-artifacts",
-          ]
-
-          env {
-            name  = "MLFLOW_ALLOWED_HOSTS"
-            value = "*"
-          }
-
-          port {
-            container_port = 5000
-            name           = "http"
-          }
-
-          volume_mount {
-            name       = "mlflow-storage"
-            mount_path = "/mlflow"
-          }
-        }
-
-        volume {
-          name = "mlflow-storage"
-          persistent_volume_claim {
-            claim_name = kubernetes_persistent_volume_claim_v1.mlflow_data.metadata[0].name
-          }
-        }
-      }
-    }
+  provisioner "local-exec" {
+    command = "kubectl apply -f ${local_file.mlflow_manifests.filename}"
   }
-  depends_on = [kubernetes_persistent_volume_claim_v1.mlflow_data]
-}
 
-resource "kubernetes_service_v1" "mlflow" {
-  metadata {
-    name      = "mlflow-service"
-    namespace = kubernetes_namespace_v1.mlops.metadata[0].name
+  provisioner "local-exec" {
+    when    = destroy
+    command = "kubectl delete pvc mlflow-data-pvc deployment mlflow-tracking service mlflow-service -n ${var.namespace} --ignore-not-found"
   }
-  spec {
-    selector = {
-      app = kubernetes_deployment_v1.mlflow.spec[0].template[0].metadata[0].labels.app
-    }
-    port {
-      port        = 5000
-      target_port = 5000
-      node_port   = 30500
-    }
-    type = "NodePort"
-  }
-  # Chain the service to the deployment
-  depends_on = [kubernetes_deployment_v1.mlflow]
 }
