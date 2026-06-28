@@ -15,17 +15,3 @@ variable "namespace" {
   type        = string
   default     = "mlops-dev"
 }
-
-variable "minio_root_user" {
-  description = "MinIO root username"
-  type        = string
-  default     = "minioadmin"
-  sensitive   = true
-}
-
-variable "minio_root_password" {
-  description = "MinIO root password"
-  type        = string
-  default     = "minioadmin"
-  sensitive   = true
-}
