@@ -1,18 +1,33 @@
 # terraform/outputs.tf
+
 output "mlflow_tracking_uri" {
-  value = "http://mlflow-service.mlops-dev.svc.cluster.local:5000" # Internal K8s DNS
+  description = "The URL for the MLflow tracking server (NodePort for external CI access)"
+  value       = "http://localhost:30500"
 }
 
 output "minio_s3_endpoint" {
-  value = "http://minio.mlops-dev.svc.cluster.local:9000" # Internal K8s DNS
+  description = "The URL for the MinIO S3 API (NodePort for external CI access)"
+  value       = "http://localhost:30900"
+}
+
+output "minio_console_url" {
+  description = "The URL for the MinIO Web Console"
+  value       = "http://localhost:30901"
+}
+
+output "namespace" {
+  description = "The Kubernetes namespace where MLOps tools are deployed"
+  value       = var.namespace
 }
 
 output "minio_root_user" {
-  value     = var.minio_root_user
-  sensitive = true
+  description = "MinIO root username"
+  value       = var.minio_root_user
+  sensitive   = true
 }
 
 output "minio_root_password" {
-  value     = var.minio_root_password
-  sensitive = true
+  description = "MinIO root password"
+  value       = var.minio_root_password
+  sensitive   = true
 }
