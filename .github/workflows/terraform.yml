@@ -9,7 +9,7 @@ on:
 jobs:
   terraform:
     runs-on: ubuntu-latest
-    # 👇 Tells all 'run' steps to execute inside the terraform folder
+    # Tells all 'run' steps to execute inside the terraform folder
     defaults:
       run:
         working-directory: ./terraform 
@@ -44,3 +44,40 @@ jobs:
       - name: Terraform Apply (Main)
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         run: terraform apply -parallelism=1 -auto-approve 
+
+      # ==========================================
+      # CROSS-REPO SECRET INJECTION & TRIGGER
+      # ==========================================
+      
+      - name: Extract Terraform Outputs
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        id: tf_outputs
+        run: |
+          echo "mlflow_uri=$(terraform output -raw mlflow_tracking_uri)" >> $GITHUB_OUTPUT
+          echo "minio_endpoint=$(terraform output -raw minio_s3_endpoint)" >> $GITHUB_OUTPUT
+          echo "minio_console=$(terraform output -raw minio_console_url)" >> $GITHUB_OUTPUT
+          echo "namespace=$(terraform output -raw namespace)" >> $GITHUB_OUTPUT
+
+      - name: Inject Secrets into App Repo
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+        run: |
+          echo "Injecting infrastructure endpoints into MLOps-customer-churn-app..."
+          gh secret set MLFLOW_TRACKING_URI -b "${{ steps.tf_outputs.outputs.mlflow_uri }}" --repo MingWei917/MLOps-customer-churn-app
+          gh secret set MINIO_S3_ENDPOINT -b "${{ steps.tf_outputs.outputs.minio_endpoint }}" --repo MingWei917/MLOps-customer-churn-app
+          gh secret set MINIO_CONSOLE_URL -b "${{ steps.tf_outputs.outputs.minio_console }}" --repo MingWei917/MLOps-customer-churn-app
+          gh secret set K8S_NAMESPACE -b "${{ steps.tf_outputs.outputs.namespace }}" --repo MingWei917/MLOps-customer-churn-app
+          
+          # Inject Credentials (Fallback to default 'minioadmin' if not set in Infra repo secrets)
+          gh secret set MINIO_ROOT_USER -b "${{ secrets.MINIO_ROOT_USER || 'minioadmin' }}" --repo MingWei917/MLOps-customer-churn-app
+          gh secret set MINIO_ROOT_PASSWORD -b "${{ secrets.MINIO_ROOT_PASSWORD || 'minioadmin' }}" --repo MingWei917/MLOps-customer-churn-app
+          echo "✅ Secrets successfully injected!"
+
+      - name: Trigger App CI/CD Pipeline
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.PAT_TOKEN }}
+          repository: MingWei917/MLOps-customer-churn-app
+          event-type: infra-updated
